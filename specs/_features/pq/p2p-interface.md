@@ -612,6 +612,10 @@ def validate_beacon_global_aggregate_and_proof_gossip(
     if not is_aggregator(state, slot, committee_index, validator_index, message.selection_proof):
         raise GossipReject("validator is not selected as aggregator")
 
+    # [REJECT] The selection proof is valid
+    if not is_valid_vrf_proof(state, validator_index, slot, message.selection_proof):
+        raise GossipReject("invalid selection proof")
+
     # [REJECT] The committees are in range, each has participants, and the bit counts match
     covered_committees: set[CommitteeIndex] = set()
     for attestation in attestations:

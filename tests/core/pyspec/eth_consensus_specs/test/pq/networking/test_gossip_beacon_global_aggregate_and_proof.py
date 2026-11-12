@@ -314,6 +314,36 @@ def test_gossip_global_aggregate__reject_not_aggregator(spec, state):
 
 @with_pq_and_later
 @spec_state_test
+def test_gossip_global_aggregate__reject_invalid_selection_proof(spec, state):
+    """A selection proof that does not open the validator's VRF tree is rejected."""
+    anchor_state = state.copy()
+    yield "topic", "meta", "beacon_global_aggregate_and_proof"
+    yield "state", anchor_state
+
+    store, signed_anchor, attestations = prepare(spec, state)
+    yield get_filename(signed_anchor), signed_anchor
+    yield "blocks", "meta", [{"block": get_filename(signed_anchor)}]
+
+    slot = attestations[0].data.slot
+    aggregator_index = get_global_aggregators(spec, state, slot)[0]
+    # The leaf still selects the validator, but its branch no longer opens the tree
+    selection_proof = get_selection_proof(spec, state, aggregator_index, slot)
+    selection_proof[1] = spec.Bytes32(b"\x01" * 32)
+
+    merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
+    signed = sign_global_aggregate(spec, state, aggregator_index, merged, proof, selection_proof)
+    yield get_filename(signed), signed
+
+    current_time_ms = time_for(spec, store, attestations)
+    result, reason = run(spec, store, get_seen(spec), signed, current_time_ms)
+    assert result == "reject"
+    assert reason == "invalid selection proof"
+
+    yield "messages", "meta", [message_meta(current_time_ms, signed, "reject")]
+
+
+@with_pq_and_later
+@spec_state_test
 def test_gossip_global_aggregate__ignore_second_from_same_validator(spec, state):
     """One global aggregate per validator and slot propagates."""
     anchor_state = state.copy()
