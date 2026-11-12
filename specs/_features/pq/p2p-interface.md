@@ -597,16 +597,17 @@ def validate_beacon_global_aggregate_and_proof_gossip(
     if any(attestation.data.target.epoch != attestation_epoch for attestation in attestations):
         raise GossipReject("attestation epoch does not match target epoch")
 
-    # [REJECT] The validator index is a valid validator index
-    if validator_index >= len(state.validators):
-        raise GossipReject("validator index out of range")
-
-    # [REJECT] The validator is active
-    if not is_active_validator(state.validators[validator_index], attestation_epoch):
-        raise GossipReject("validator is not active")
+    # [REJECT] The validator is a member of a committee of the slot
+    committee_count = get_committee_count_per_slot(state, attestation_epoch)
+    validator_committees = [
+        index
+        for index in range(committee_count)
+        if validator_index in get_beacon_committee(state, slot, CommitteeIndex(index))
+    ]
+    if len(validator_committees) < 1:
+        raise GossipReject("validator is not a member of a committee of the slot")
 
     # [REJECT] The committees are in range, each has participants, and the bit counts match
-    committee_count = get_committee_count_per_slot(state, attestation_epoch)
     covered_committees: set[CommitteeIndex] = set()
     for attestation in attestations:
         committee_indices = get_committee_indices(attestation.committee_bits)

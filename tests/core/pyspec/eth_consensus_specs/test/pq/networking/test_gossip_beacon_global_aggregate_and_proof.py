@@ -245,7 +245,39 @@ def test_gossip_global_aggregate__reject_unknown_validator(spec, state):
     current_time_ms = time_for(spec, store, attestations)
     result, reason = run(spec, store, get_seen(spec), signed, current_time_ms)
     assert result == "reject"
-    assert reason == "validator index out of range"
+    assert reason == "validator is not a member of a committee of the slot"
+
+    yield "messages", "meta", [message_meta(current_time_ms, signed, "reject")]
+
+
+@with_pq_and_later
+@spec_state_test
+def test_gossip_global_aggregate__reject_not_committee_member(spec, state):
+    """A validator in no committee of the slot is rejected."""
+    anchor_state = state.copy()
+    yield "topic", "meta", "beacon_global_aggregate_and_proof"
+    yield "state", anchor_state
+
+    store, signed_anchor, attestations = prepare(spec, state)
+    yield get_filename(signed_anchor), signed_anchor
+    yield "blocks", "meta", [{"block": get_filename(signed_anchor)}]
+
+    slot = attestations[0].data.slot
+    committee_count = spec.get_committee_count_per_slot(state, spec.compute_epoch_at_slot(slot))
+    members = set()
+    for committee_index in range(committee_count):
+        members.update(spec.get_beacon_committee(state, slot, committee_index))
+    validator_indices = [spec.ValidatorIndex(index) for index in range(len(state.validators))]
+    outsider = next(index for index in validator_indices if index not in members)
+
+    merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
+    signed = sign_global_aggregate(spec, state, outsider, merged, proof)
+    yield get_filename(signed), signed
+
+    current_time_ms = time_for(spec, store, attestations)
+    result, reason = run(spec, store, get_seen(spec), signed, current_time_ms)
+    assert result == "reject"
+    assert reason == "validator is not a member of a committee of the slot"
 
     yield "messages", "meta", [message_meta(current_time_ms, signed, "reject")]
 
