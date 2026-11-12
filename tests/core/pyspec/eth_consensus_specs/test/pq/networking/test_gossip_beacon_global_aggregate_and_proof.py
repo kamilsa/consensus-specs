@@ -6,7 +6,9 @@ from eth_consensus_specs.test.context import (
 from eth_consensus_specs.test.helpers.attestations import (
     get_aggregate_and_proof,
     get_aggregator_index,
+    get_selection_proof,
     get_valid_attestations_at_slot,
+    is_aggregator,
 )
 from eth_consensus_specs.test.helpers.constants import MINIMAL
 from eth_consensus_specs.test.helpers.fork_choice import (
@@ -36,10 +38,29 @@ def get_network_aggregates(spec, state, attestations):
     return network_aggregates
 
 
-def sign_global_aggregate(spec, state, validator_index, attestations, proof):
+def get_global_aggregators(spec, state, slot):
+    """
+    The validators that may publish a global aggregate for ``slot``: the members
+    of its committees that are selected to aggregate, in committee order.
+    """
+    aggregators = []
+    committee_count = spec.get_committee_count_per_slot(state, spec.compute_epoch_at_slot(slot))
+    for committee_index in range(committee_count):
+        for validator_index in spec.get_beacon_committee(state, slot, committee_index):
+            if is_aggregator(spec, state, slot, committee_index, validator_index):
+                aggregators.append(validator_index)
+    return aggregators
+
+
+def sign_global_aggregate(spec, state, validator_index, attestations, proof, selection_proof=None):
+    if selection_proof is None:
+        selection_proof = get_selection_proof(
+            spec, state, validator_index, attestations[0].data.slot
+        )
     message = spec.GlobalAggregateAndProof(
         validator_index=validator_index,
         attestations=attestations,
+        selection_proof=selection_proof,
         proof=proof,
     )
     signature = spec.get_global_aggregate_and_proof_signature(
@@ -48,7 +69,9 @@ def sign_global_aggregate(spec, state, validator_index, attestations, proof):
     return spec.SignedGlobalAggregateAndProof(message=message, signature=signature)
 
 
-def create_signed_global_aggregate(spec, state, attestations, validator_index=0):
+def create_signed_global_aggregate(spec, state, attestations, validator_index=None):
+    if validator_index is None:
+        validator_index = get_global_aggregators(spec, state, attestations[0].data.slot)[0]
     attestations, proof = spec.compute_global_aggregate(
         get_network_aggregates(spec, state, attestations)
     )
@@ -115,7 +138,8 @@ def test_gossip_global_aggregate__valid_full_coverage(spec, state):
     current_time_ms = time_for(spec, store, attestations)
     result, reason = run(spec, store, seen, signed, current_time_ms)
     assert result == "valid", reason
-    assert (attestations[0].data.slot, spec.ValidatorIndex(0)) in seen.global_aggregator_slots
+    validator_slot_key = (attestations[0].data.slot, signed.message.validator_index)
+    assert validator_slot_key in seen.global_aggregator_slots
 
     yield "messages", "meta", [message_meta(current_time_ms, signed, "valid")]
 
@@ -159,7 +183,8 @@ def test_gossip_global_aggregate__reject_equal_data(spec, state):
 
     merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
     doubled = spec.Attestations(data=[merged[0], merged[0]])
-    signed = sign_global_aggregate(spec, state, spec.ValidatorIndex(0), doubled, proof)
+    aggregator_index = get_global_aggregators(spec, state, state.slot)[0]
+    signed = sign_global_aggregate(spec, state, aggregator_index, doubled, proof)
     yield get_filename(signed), signed
 
     current_time_ms = time_for(spec, store, attestations)
@@ -184,7 +209,8 @@ def test_gossip_global_aggregate__reject_data_index_too_high(spec, state):
 
     merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
     merged[0].data.index = 2
-    signed = sign_global_aggregate(spec, state, spec.ValidatorIndex(0), merged, proof)
+    aggregator_index = get_global_aggregators(spec, state, state.slot)[0]
+    signed = sign_global_aggregate(spec, state, aggregator_index, merged, proof)
     yield get_filename(signed), signed
 
     current_time_ms = time_for(spec, store, attestations)
@@ -237,7 +263,8 @@ def test_gossip_global_aggregate__ignore_second_from_same_validator(spec, state)
     yield "blocks", "meta", [{"block": get_filename(signed_anchor)}]
 
     merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
-    first = sign_global_aggregate(spec, state, spec.ValidatorIndex(0), merged, proof)
+    aggregator_index = get_global_aggregators(spec, state, state.slot)[0]
+    first = sign_global_aggregate(spec, state, aggregator_index, merged, proof)
     # Drop one participant so the second message is not a subset-ignore
     fewer = spec.Attestations(data=[attestation.copy() for attestation in merged])
     bits = list(fewer[0].aggregation_bits)
@@ -245,7 +272,7 @@ def test_gossip_global_aggregate__ignore_second_from_same_validator(spec, state)
     assert len(set_positions) >= 2, "need two participants to drop one"
     bits[set_positions[0]] = False
     fewer[0].aggregation_bits = spec.AggregationBits(data=bits)
-    second = sign_global_aggregate(spec, state, spec.ValidatorIndex(0), fewer, proof)
+    second = sign_global_aggregate(spec, state, aggregator_index, fewer, proof)
     yield get_filename(first), first
     yield get_filename(second), second
 
@@ -280,8 +307,10 @@ def test_gossip_global_aggregate__ignore_subset_participation(spec, state):
     yield "blocks", "meta", [{"block": get_filename(signed_anchor)}]
 
     merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
-    first = sign_global_aggregate(spec, state, spec.ValidatorIndex(0), merged, proof)
-    second = sign_global_aggregate(spec, state, spec.ValidatorIndex(1), merged, proof)
+    aggregators = get_global_aggregators(spec, state, state.slot)
+    assert len(aggregators) >= 2, "need two selected aggregators"
+    first = sign_global_aggregate(spec, state, aggregators[0], merged, proof)
+    second = sign_global_aggregate(spec, state, aggregators[1], merged, proof)
     yield get_filename(first), first
     yield get_filename(second), second
 
