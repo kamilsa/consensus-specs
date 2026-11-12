@@ -134,6 +134,7 @@ network aggregates itself.
 class GlobalAggregateAndProof(Container):
     validator_index: ValidatorIndex
     attestations: Attestations
+    selection_proof: VRFProof
     proof: AttestationProof
 ```
 

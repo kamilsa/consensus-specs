@@ -74,7 +74,7 @@ which were sized for BLS signatures.
 | Name                                            | Value                           |
 | ----------------------------------------------- | ------------------------------- |
 | `MAX_SIGNED_AGGREGATE_AND_PROOF_SIZE_PQ`        | `Uint64(1068549)` (= ~1 MiB)    |
-| `MAX_SIGNED_GLOBAL_AGGREGATE_AND_PROOF_SIZE_PQ` | `Uint64(1315464)` (= ~1.25 MiB) |
+| `MAX_SIGNED_GLOBAL_AGGREGATE_AND_PROOF_SIZE_PQ` | `Uint64(1316488)` (= ~1.25 MiB) |
 | `MAX_ATTESTER_SLASHING_SIZE_PQ`                 | `Uint64(4194584)` (= ~4 MiB)    |
 | `MAX_SIGNED_EXECUTION_PAYLOAD_BID_SIZE_PQ`      | `Uint64(199240)` (= ~195 KiB)   |
 
