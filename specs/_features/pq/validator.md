@@ -126,9 +126,10 @@ class SignedAggregateAndProof(Container):
 #### `GlobalAggregateAndProof`
 
 *Note*: The attestations of one slot, one per `AttestationData`, over every
-committee of the slot, and one proof of all their signatures. Any validator may
-publish one, so a proposer can include its attestations without merging the
-network aggregates itself.
+committee of the slot, and one proof of all their signatures. Only a validator
+selected to aggregate for a committee of the slot may publish one, and the
+message carries that validator's selection proof. A proposer can include its
+attestations without merging the network aggregates itself.
 
 ```python
 class GlobalAggregateAndProof(Container):
@@ -565,11 +566,16 @@ def get_aggregate_and_proof_signature(
 
 ### Global aggregation
 
-*Note*: Any validator MAY act as a global aggregator for a slot. Once
-`get_global_aggregate_due_ms()` has elapsed in the slot, it takes the network
-aggregates of the slot it has seen, keeps for each `AttestationData` and
+*Note*: A validator that `is_aggregator` selects for its committee at a slot MAY
+also act as a global aggregator for that slot. No other validator can: a node
+rejects a global aggregate whose `selection_proof` does not select its
+`validator_index` for a committee of the slot, so a slot has at most as many
+global aggregators as it has committee aggregators. Once
+`get_global_aggregate_due_ms()` has elapsed in the slot, the validator takes the
+network aggregates of the slot it has seen, keeps for each `AttestationData` and
 committee the one with the most participants, and, if they cover every committee
-of the slot, builds a `GlobalAggregateAndProof` and broadcasts it on the
+of the slot, builds a `GlobalAggregateAndProof` with the `selection_proof` of
+its `AggregateAndProof` and broadcasts it on the
 `beacon_global_aggregate_and_proof` topic. A node propagates at most one global
 aggregate per validator and slot, and none whose participation is a subset of
 one it has already seen, so a validator SHOULD NOT broadcast one that adds no

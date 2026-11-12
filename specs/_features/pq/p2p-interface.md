@@ -526,9 +526,10 @@ def validate_beacon_aggregate_and_proof_gossip(
 ##### New `beacon_global_aggregate_and_proof`
 
 *Note*: The message carries the attestations of one slot over every committee of
-the slot and one proof of their signatures. Any active validator may publish one
-per slot. A message whose participation adds nothing to one already seen is not
-propagated.
+the slot and one proof of their signatures. Only a validator that
+`is_aggregator` selects for a committee of the slot may publish one, and at most
+one per slot. A message whose participation adds nothing to one already seen is
+not propagated.
 
 ```python
 def validate_beacon_global_aggregate_and_proof_gossip(
