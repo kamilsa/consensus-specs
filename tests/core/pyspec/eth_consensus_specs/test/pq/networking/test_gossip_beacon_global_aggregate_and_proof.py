@@ -10,7 +10,7 @@ from eth_consensus_specs.test.helpers.attestations import (
     get_valid_attestations_at_slot,
     is_aggregator,
 )
-from eth_consensus_specs.test.helpers.constants import MINIMAL
+from eth_consensus_specs.test.helpers.constants import MAINNET, MINIMAL
 from eth_consensus_specs.test.helpers.fork_choice import (
     get_genesis_forkchoice_store_and_block,
 )
@@ -278,6 +278,36 @@ def test_gossip_global_aggregate__reject_not_committee_member(spec, state):
     result, reason = run(spec, store, get_seen(spec), signed, current_time_ms)
     assert result == "reject"
     assert reason == "validator is not a member of a committee of the slot"
+
+    yield "messages", "meta", [message_meta(current_time_ms, signed, "reject")]
+
+
+@with_pq_and_later
+@spec_state_test
+@with_presets([MAINNET], "minimal committees are too small to leave a member unselected")
+def test_gossip_global_aggregate__reject_not_aggregator(spec, state):
+    """A committee member that is not selected to aggregate is rejected."""
+    anchor_state = state.copy()
+    yield "topic", "meta", "beacon_global_aggregate_and_proof"
+    yield "state", anchor_state
+
+    store, signed_anchor, attestations = prepare(spec, state)
+    yield get_filename(signed_anchor), signed_anchor
+    yield "blocks", "meta", [{"block": get_filename(signed_anchor)}]
+
+    slot = attestations[0].data.slot
+    committee = spec.get_beacon_committee(state, slot, spec.CommitteeIndex(0))
+    unselected = [index for index in committee if not is_aggregator(spec, state, slot, 0, index)]
+    assert len(unselected) >= 1, "need a committee member that is not selected"
+
+    merged, proof = spec.compute_global_aggregate(get_network_aggregates(spec, state, attestations))
+    signed = sign_global_aggregate(spec, state, unselected[0], merged, proof)
+    yield get_filename(signed), signed
+
+    current_time_ms = time_for(spec, store, attestations)
+    result, reason = run(spec, store, get_seen(spec), signed, current_time_ms)
+    assert result == "reject"
+    assert reason == "validator is not selected as aggregator"
 
     yield "messages", "meta", [message_meta(current_time_ms, signed, "reject")]
 
